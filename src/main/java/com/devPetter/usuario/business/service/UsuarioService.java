@@ -4,9 +4,18 @@ package com.devPetter.usuario.business.service;
 import com.devPetter.usuario.business.converter.UsuarioConverter;
 import com.devPetter.usuario.business.dto.UsuarioDTO;
 import com.devPetter.usuario.infrastructure.entity.Usuario;
+import com.devPetter.usuario.infrastructure.exceptions.ConflictException;
+import com.devPetter.usuario.infrastructure.exceptions.ResourceNotFoundException;
 import com.devPetter.usuario.infrastructure.repository.UsuarioRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
+
+import java.util.Optional;
 
 @Service
 @RequiredArgsConstructor
@@ -14,8 +23,30 @@ public class UsuarioService {
 
     private final UsuarioRepository usuarioRepository;
     private final UsuarioConverter usuarioConverter;
+    private final PasswordEncoder passwordEncoder;
 
-    public UsuarioDTO salvaUsuario(UsuarioDTO dto){
+
+    public boolean verificaEmailExistente(String email) {
+        return usuarioRepository.existsByEmail(email);
+    }
+
+    public void emailExiste(String email) {
+        try {
+            boolean existe = verificaEmailExistente(email);
+            if (existe) {
+                throw new ConflictException("Email já cadastrado: " + email);
+            }
+        } catch (ConflictException e) {
+            throw new ConflictException("Email já cadastrado, " + e.getCause());
+        }
+    }
+
+    public UsuarioDTO salvaUsuario(UsuarioDTO dto) {
+        emailExiste(dto.getEmail());
+
+        //Ecnripta a senha do usuario
+        dto.setSenha(passwordEncoder.encode(dto.getSenha()));
+
         //Converte o DTO em entity
         Usuario usuario = usuarioConverter.paraUsuario(dto);
 
@@ -24,5 +55,22 @@ public class UsuarioService {
 
         //Converte a entity em DTO novamente e retorna
         return usuarioConverter.paraUsuarioDTO(usuario);
+    }
+
+    public Usuario buscarUsuarioPorEmail(String email) {
+        return usuarioRepository.findByEmail(email).orElseThrow(
+                () -> new ResourceNotFoundException("Usuário com email '" + email + "' não encontrado.")
+        );
+    }
+
+    @Transactional
+    public void deletarUsuarioPorEmail(String email) {
+        boolean existe = verificaEmailExistente(email);
+
+        if (existe) {
+            usuarioRepository.deleteByEmail(email);
+        } else {
+            throw new ResourceNotFoundException("Usuário com email '" + email + "' não encontrado.");
+        }
     }
 }
